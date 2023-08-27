@@ -12,6 +12,8 @@ import com.shepherdmoney.interviewproject.vo.response.CreditCardView;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -87,36 +89,50 @@ public class CreditCardServiceImpl implements CreditCardService {
 
     @Override
     public List<BalanceHistory> postBalance(UpdateBalancePayload[] payload) {
+        //transaction - [{date: 4/12, amount: 12}, {date: 4/10, amount: 10} {date: 4/12, amount: 10}]
         String ccNumber = payload[0].getCreditCardNumber();
         CreditCard creditCard = this.findCreditCardByNumber(ccNumber);
-        Arrays.sort(payload, Comparator.comparing(UpdateBalancePayload::getTransactionTime));
+        Arrays.sort(payload, Comparator.comparing(UpdateBalancePayload::getTransactionTime)); // sort using time
+        System.out.println("first entry after sorting - " + payload[0].getTransactionTime());
 
         //case 1 - if card has not any balance history -
-        System.out.println("fgfgfgfgfgfg"+creditCard.getBalanceHistoryList().size());
+        System.out.println("total size" + creditCard.getBalanceHistoryList().size());
         if (creditCard.getBalanceHistoryList().isEmpty()) {
-            Double sum = payload[0].getTransactionAmount();
-            Instant currInstant = payload[0].getTransactionTime();
+            Double sum = payload[0].getTransactionAmount(); // 10
+            Instant currInstant = payload[0].getTransactionTime(); // 4/10
+            String currDate = this.dateFormat(Date.from(payload[0].getTransactionTime()));
             List<BalanceHistory> history = new ArrayList<>();
 
             for (int i = 1; i < payload.length; i++) {
-                if (currInstant.compareTo(payload[i].getTransactionTime()) != 0) {
+                if(!currDate.equals(this.dateFormat(Date.from(payload[i].getTransactionTime())))){
                     BalanceHistory balanceHistory = new BalanceHistory();
                     balanceHistory.setBalance(sum);
                     balanceHistory.setDate(currInstant);
                     balanceHistory.setCreditCard(creditCard);
                     currInstant = payload[i].getTransactionTime();
+                    currDate = this.dateFormat(Date.from(payload[i].getTransactionTime()));
                     history.add(balanceHistory);
                 }
-                sum = sum + payload[i].getTransactionAmount();
+
+                sum = sum + payload[i].getTransactionAmount(); //20
             }
-            Instant today = Instant.now();
-            if(today.compareTo(history.get(0).getDate())!=0){
+            BalanceHistory balanceHistory = new BalanceHistory();
+            balanceHistory.setBalance(sum);
+            balanceHistory.setDate(currInstant); // for the last entry
+            balanceHistory.setCreditCard(creditCard);
+            history.add(balanceHistory);
+            Collections.reverse(history);
+            Instant today = Instant.now(); // check only date part
+            String todayDate = this.dateFormat(Date.from(today));
+            System.out.println(Date.from(today));
+
+            if (todayDate.equals(Date.from(history.get(0).getDate()))) {
                 Double amount = history.get(0).getBalance();
-                BalanceHistory balanceHistory = new BalanceHistory();
-                balanceHistory.setBalance(amount);
-                balanceHistory.setDate(today);
-                balanceHistory.setCreditCard(creditCard);
-                history.add(0,balanceHistory);
+                BalanceHistory balanceHistory1 = new BalanceHistory();
+                balanceHistory1.setBalance(amount);
+                balanceHistory1.setDate(today);
+                balanceHistory1.setCreditCard(creditCard);
+                history.add(0, balanceHistory1);
 
             }
             creditCard.setBalanceHistoryList(history);
@@ -124,28 +140,86 @@ public class CreditCardServiceImpl implements CreditCardService {
 
             return history;
         }
+
         List<BalanceHistory> currentBalanceHistory = creditCard.getBalanceHistoryList();
-        for (UpdateBalancePayload txn : payload) {
-            for (BalanceHistory balanceHistory : currentBalanceHistory) {
-                if (balanceHistory.getDate().compareTo(txn.getTransactionTime()) >= 0) {
-                    balanceHistory.setBalance(balanceHistory.getBalance() + txn.getTransactionAmount());
-                }
-            }
-            Instant today = Instant.now();
-            if(today.compareTo(currentBalanceHistory.get(0).getDate())!=0){
-                Double amount = currentBalanceHistory.get(0).getBalance();
+        Map<String,Double> map = new TreeMap<>();
+        for(BalanceHistory hist:currentBalanceHistory){
+            map.put(this.dateFormat(Date.from(hist.getDate())),hist.getBalance());
+        }
+        for(UpdateBalancePayload txn:payload){ // add new history date
+            String txnDate = this.dateFormat(Date.from(txn.getTransactionTime()));
+            if(!map.containsKey(txnDate)){
                 BalanceHistory balanceHistory = new BalanceHistory();
-                balanceHistory.setBalance(amount);
-                balanceHistory.setDate(today);
+
+                balanceHistory.setBalance(0.0);
+                balanceHistory.setDate(txn.getTransactionTime());
                 balanceHistory.setCreditCard(creditCard);
-                currentBalanceHistory.add(0,balanceHistory);
+                currentBalanceHistory.add(balanceHistory);
+            }
+        }
+        Collections.sort(currentBalanceHistory,Comparator.comparing(BalanceHistory::getDate)); // sort using dates
+        for(int i=1;i<currentBalanceHistory.size();i++){
+            if(currentBalanceHistory.get(i).getId()==0){
+                Double balance = currentBalanceHistory.get(i-1).getBalance(); // set prev date balance to new entries
+                currentBalanceHistory.get(i).setBalance(balance);
+            }
+        }
+        for(UpdateBalancePayload txn:payload){
+            String date = this.dateFormat(Date.from(txn.getTransactionTime()));
+            Date date1 = this.convertToDate(date);
+            for(BalanceHistory hist: currentBalanceHistory){
+                String dt = this.dateFormat(Date.from(hist.getDate()));
+                Date dt1 = this.convertToDate(dt);
+                if(date1.before(dt1) || date1.equals(dt1)){
+                    Double bal = hist.getBalance();
+                    hist.setBalance(bal+txn.getTransactionAmount());
+                }
+
 
             }
+        }
 
-            creditCard.setBalanceHistoryList(currentBalanceHistory);
-            this.creditCardRepository.save(creditCard);
+
+        Collections.reverse(currentBalanceHistory);
+        Instant today = Instant.now();
+        String todayDate = this.dateFormat(Date.from(today));
+        System.out.println(Date.from(today));
+
+        if (todayDate.equals(Date.from(currentBalanceHistory.get(0).getDate()))) {
+            Double amount = currentBalanceHistory.get(0).getBalance();
+            BalanceHistory balanceHistory1 = new BalanceHistory();
+            balanceHistory1.setBalance(amount);
+            balanceHistory1.setDate(today);
+            balanceHistory1.setCreditCard(creditCard);
+            currentBalanceHistory.add(0, balanceHistory1);
 
         }
+        creditCard.setBalanceHistoryList(currentBalanceHistory);
+        this.creditCardRepository.save(creditCard);
+
+
         return currentBalanceHistory;
+
+    }
+
+    private String dateFormat(Date date){
+        SimpleDateFormat outputDateFormat = new SimpleDateFormat("MM-dd-yyyy");
+        String outputDateStr = outputDateFormat.format(date);
+        return outputDateStr;
+    }
+
+    public Date convertToDate(String date) {
+
+        SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy");
+
+        try {
+            Date date1 = dateFormat.parse(date);
+            return date1;
+        } catch (ParseException e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 }
+
+
