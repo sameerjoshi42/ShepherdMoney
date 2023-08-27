@@ -126,7 +126,7 @@ public class CreditCardServiceImpl implements CreditCardService {
             String todayDate = this.dateFormat(Date.from(today));
             System.out.println(Date.from(today));
 
-            if (todayDate.equals(Date.from(history.get(0).getDate()))) {
+            if (!todayDate.equals(Date.from(history.get(0).getDate()))) {
                 Double amount = history.get(0).getBalance();
                 BalanceHistory balanceHistory1 = new BalanceHistory();
                 balanceHistory1.setBalance(amount);
@@ -185,7 +185,7 @@ public class CreditCardServiceImpl implements CreditCardService {
         String todayDate = this.dateFormat(Date.from(today));
         System.out.println(Date.from(today));
 
-        if (todayDate.equals(Date.from(currentBalanceHistory.get(0).getDate()))) {
+        if (!todayDate.equals(Date.from(currentBalanceHistory.get(0).getDate()))) {
             Double amount = currentBalanceHistory.get(0).getBalance();
             BalanceHistory balanceHistory1 = new BalanceHistory();
             balanceHistory1.setBalance(amount);
